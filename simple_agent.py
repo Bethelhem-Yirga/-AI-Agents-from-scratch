@@ -1,49 +1,44 @@
 """
-Tutorial 01: Simple AI Agent
-A basic conversational AI agent using OpenAI's API.
+Tutorial 01: Simple AI Agent (Anthropic Claude Version)
+A basic conversational AI agent using Anthropic's Claude API.
 """
 
 import os
 from dotenv import load_dotenv
-from openai import OpenAI
+from anthropic import Anthropic
 
 
-class SimpleAgent:
+class SimpleAgentClaude:
     """
-    A simple AI agent that can have conversations using an LLM.
+    A simple AI agent that can have conversations using Anthropic's Claude.
 
-    This agent demonstrates the basic components of an AI agent:
-    - System prompt (defines behavior)
-    - Message handling (user input/agent output)
-    - LLM integration (API calls)
-    - Conversation loop (interactive mode)
+    This is an alternative implementation using Claude instead of OpenAI.
+    The core concepts remain the same.
     """
 
-    def __init__(self, model="gpt-3.5-turbo", system_prompt=None):
+    def __init__(self, model="claude-3-5-sonnet-20241022", system_prompt=None):
         """
-        Initialize the agent with an LLM model and system prompt.
+        Initialize the agent with Claude model and system prompt.
 
         Args:
-            model (str): The LLM model to use (default: gpt-3.5-turbo)
+            model (str): The Claude model to use
             system_prompt (str): Instructions that define agent behavior
         """
-        # Load environment variables from .env file
-        # Use override=True to prioritize .env file over system environment variables
-        load_dotenv(override=True)
+        # Load environment variables
+        load_dotenv()
 
-        # Set up the model
         self.model = model
 
-        # Initialize OpenAI client
-        api_key = os.getenv("OPENAI_API_KEY")
+        # Initialize Anthropic client
+        api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise ValueError(
-                "OPENAI_API_KEY not found. Please set it in your .env file."
+                "ANTHROPIC_API_KEY not found. Please set it in your .env file."
             )
 
-        self.client = OpenAI(api_key=api_key)
+        self.client = Anthropic(api_key=api_key)
 
-        # Set default system prompt if none provided
+        # Set default system prompt
         self.system_prompt = system_prompt or """You are a helpful AI assistant.
 You provide clear, concise, and accurate responses to user questions.
 You are friendly and professional."""
@@ -59,61 +54,44 @@ You are friendly and professional."""
 
         Returns:
             str: The agent's response
-
-        Raises:
-            Exception: If the API call fails
         """
-        # Construct the messages list
-        # System message defines behavior, user message is the input
-        messages = [
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": user_message}
-        ]
-
-        # Call the OpenAI API
-        response = self.client.chat.completions.create(
+        # Call the Anthropic API
+        response = self.client.messages.create(
             model=self.model,
-            messages=messages,
-            temperature=0.7,      # Controls randomness (0.0 - 2.0)
-            max_tokens=500,       # Maximum length of response
-            top_p=1.0,           # Nucleus sampling parameter
-            frequency_penalty=0.0,  # Penalize repeated tokens
-            presence_penalty=0.0    # Penalize tokens based on presence
+            max_tokens=500,
+            temperature=0.7,
+            system=self.system_prompt,
+            messages=[
+                {"role": "user", "content": user_message}
+            ]
         )
 
         # Extract and return the response text
-        return response.choices[0].message.content
+        return response.content[0].text
 
     def run(self):
         """
         Run the agent in an interactive loop.
-
-        The user can type messages and receive responses until they
-        type 'quit', 'exit', or 'bye'.
         """
         print("\n" + "="*60)
-        print("Simple AI Agent - Interactive Mode")
+        print("Simple AI Agent (Claude) - Interactive Mode")
         print("="*60)
-        print("Agent: Hello! I'm your AI assistant.")
+        print("Agent: Hello! I'm your AI assistant powered by Claude.")
         print("       Type your message and press Enter.")
         print("       Type 'quit', 'exit', or 'bye' to end the conversation.")
         print("="*60 + "\n")
 
         while True:
-            # Get user input
             user_input = input("You: ").strip()
 
-            # Check for exit commands
             if user_input.lower() in ['quit', 'exit', 'bye']:
                 print("\nAgent: Goodbye! Have a great day!\n")
                 break
 
-            # Skip empty inputs
             if not user_input:
                 continue
 
             try:
-                # Generate and display response
                 print("\nAgent: ", end="", flush=True)
                 response = self.generate_response(user_input)
                 print(f"{response}\n")
@@ -123,64 +101,6 @@ You are friendly and professional."""
                 print("Please try again or type 'quit' to exit.\n")
 
 
-# Example usage and demonstrations
-def demo_basic_agent():
-    """Run a basic agent with default settings."""
-    agent = SimpleAgent()
-    agent.run()
-
-
-def demo_custom_agent():
-    """Run an agent with a custom system prompt."""
-    custom_prompt = """You are a helpful Python programming tutor.
-You provide clear explanations and code examples.
-You encourage best practices and clean code.
-You are patient and supportive with learners."""
-
-    agent = SimpleAgent(
-        model="gpt-3.5-turbo",
-        system_prompt=custom_prompt
-    )
-    agent.run()
-
-
-def demo_pirate_agent():
-    """Run an agent with a pirate personality."""
-    pirate_prompt = """You are a helpful AI assistant who speaks like a pirate.
-Use pirate slang and sayings while still being helpful and accurate.
-Start responses with 'Ahoy!' and use phrases like 'matey', 'arr', etc."""
-
-    agent = SimpleAgent(system_prompt=pirate_prompt)
-    agent.run()
-
-
-def demo_single_response():
-    """Demonstrate a single request-response (non-interactive)."""
-    agent = SimpleAgent()
-
-    # Example questions
-    questions = [
-        "What is Python?",
-        "Explain what an AI agent is in one sentence.",
-        "What's the difference between a list and a tuple in Python?"
-    ]
-
-    print("\n" + "="*60)
-    print("Single Response Demo")
-    print("="*60 + "\n")
-
-    for question in questions:
-        print(f"Question: {question}")
-        response = agent.generate_response(question)
-        print(f"Answer: {response}\n")
-        print("-"*60 + "\n")
-
-
 if __name__ == "__main__":
-    # Run the basic interactive agent
-    demo_basic_agent()
-
-    # Uncomment to try other demos:
-    # demo_custom_agent()
-    # demo_pirate_agent()
-    # demo_single_response()
+    agent = SimpleAgentClaude()
+    agent.run()
