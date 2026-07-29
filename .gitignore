@@ -4,3 +4,4 @@ myenv/
 env/
 venv/
 ENV/
+.env
