@@ -1,0 +1,30 @@
+{
+  "system_prompt": "You are a helpful AI assistant.",
+  "model": "google/gemma-4-26b-a4b-it:free",
+  "temperature": 0.7,
+  "max_tokens": 500,
+  "max_history": 10,
+  "timestamp": "2026-07-30T16:10:07.855718",
+  "history": [
+    {
+      "role": "user",
+      "content": "where do i live",
+      "timestamp": "2026-07-30T15:48:02.672634"
+    },
+    {
+      "role": "assistant",
+      "content": "As an AI, I do not have access to your physical location, your GPS data, or your private information unless you explicitly provide it to me. I don't know your address, your city, or even what country you are in.\n\nIf you are looking for your own location, you can find it by:\n\n1.  **Checking a Map App:** Open Google Maps or Apple Maps on your phone; the blue dot will show your current location.\n2.  **Checking your device settings:** On a smartphone, look at your \"Location Services\" settings.\n3.  **Searching Google:** If you search \"Where am I?\" on a browser with location services enabled, it will show you your approximate area.\n\n**Privacy Note:** Please be careful about sharing your specific home address or sensitive personal information with any AI or online service.",
+      "timestamp": "2026-07-30T15:48:17.315727"
+    },
+    {
+      "role": "user",
+      "content": "i london",
+      "timestamp": "2026-07-30T16:08:21.624563"
+    },
+    {
+      "role": "assistant",
+      "content": "It sounds like you are saying you live in **London**!\n\nSince London is a massive city, are you looking for something specific in your area? I can help you with things like:\n\n*   **Recommendations:** Finding a good restaurant, museum, or park nearby.\n*   **Information:** Checking the weather in London or finding facts about different boroughs.\n*   **Transport:** General information about the Tube, buses, or trains.\n*   **Events:** Finding out what is happening in the city.\n\n**A quick tip for your privacy:** Since London is a very large city, it is best not to share your specific street name, postcode, or house number in this chat. Keeping it general (like \"North London\" or \"Chelsea\") is much safer!",
+      "timestamp": "2026-07-30T16:08:30.763080"
+    }
+  ]
+}
