@@ -18,9 +18,7 @@ async def test_server():
     server_path = script_dir / "simple_mcp_server.py"
     
     # If not found, try the basic folder
-    if not server_path.exists():
-        server_path = Path("/home/mercy/Desktop/AI-Agents-from-scratch/3 mcp-servers/basic/simple_mcp_server.py")
-    
+   
     print(f"📂 Server: {server_path}")
     
     if not server_path.exists():
