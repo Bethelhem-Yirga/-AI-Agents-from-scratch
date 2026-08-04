@@ -1,6 +1,6 @@
 """
 Tutorial 03-B: MCP Server with Advanced Tools
-Works with ALL MCP SDK versions
+Works with ALL MCP SDK versions - FIXED
 """
 
 import asyncio
@@ -42,20 +42,17 @@ class WeatherMCPServer:
         self.setup_handlers()
 
     def setup_handlers(self):
-        """Register tool handlers - using request_handlers dict."""
-        
-        # ✅ CORRECT: Use request_handlers dictionary
-        self.server.request_handlers["tools/list"] = self._handle_list_tools
-        self.server.request_handlers["tools/call"] = self._handle_call_tools
+        """Register tool handlers."""
 
-    async def _handle_list_tools(self, request):
-        """Handle tools/list request."""
-        return {
-            "tools": [
-                {
-                    "name": "get_current_weather",
-                    "description": "Get the current weather for a city",
-                    "inputSchema": {
+        # ✅ FIXED: Use the correct decorator pattern
+        @self.server.list_tools()
+        async def list_tools() -> list[Tool]:
+            """List all available tools."""
+            return [
+                Tool(
+                    name="get_current_weather",
+                    description="Get the current weather for a city",
+                    inputSchema={
                         "type": "object",
                         "properties": {
                             "city": {
@@ -71,11 +68,11 @@ class WeatherMCPServer:
                         },
                         "required": ["city"]
                     }
-                },
-                {
-                    "name": "get_forecast",
-                    "description": "Get a weather forecast for a city",
-                    "inputSchema": {
+                ),
+                Tool(
+                    name="get_forecast",
+                    description="Get a weather forecast for a city",
+                    inputSchema={
                         "type": "object",
                         "properties": {
                             "city": {
@@ -90,11 +87,11 @@ class WeatherMCPServer:
                         },
                         "required": ["city"]
                     }
-                },
-                {
-                    "name": "compare_weather",
-                    "description": "Compare weather between two cities",
-                    "inputSchema": {
+                ),
+                Tool(
+                    name="compare_weather",
+                    description="Compare weather between two cities",
+                    inputSchema={
                         "type": "object",
                         "properties": {
                             "city1": {"type": "string", "description": "First city"},
@@ -102,11 +99,11 @@ class WeatherMCPServer:
                         },
                         "required": ["city1", "city2"]
                     }
-                },
-                {
-                    "name": "save_weather_alert",
-                    "description": "Save a weather alert to a file",
-                    "inputSchema": {
+                ),
+                Tool(
+                    name="save_weather_alert",
+                    description="Save a weather alert to a file",
+                    inputSchema={
                         "type": "object",
                         "properties": {
                             "city": {"type": "string", "description": "City name"},
@@ -119,45 +116,25 @@ class WeatherMCPServer:
                         },
                         "required": ["city", "alert_type", "message"]
                     }
-                }
+                )
             ]
-        }
 
-    async def _handle_call_tools(self, request):
-        """Handle tools/call request."""
-        name = request.params.get("name")
-        arguments = request.params.get("arguments", {})
-        
-        result = await self._execute_tool(name, arguments)
-        
-        # Convert to dict format
-        if isinstance(result, list) and len(result) > 0:
-            content = []
-            for item in result:
-                if hasattr(item, 'text'):
-                    content.append({"type": "text", "text": item.text})
-                elif isinstance(item, dict):
-                    content.append(item)
-                else:
-                    content.append({"type": "text", "text": str(item)})
-            return {"content": content}
-        else:
-            return {"content": [{"type": "text", "text": str(result)}]}
+        @self.server.call_tool()
+        async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+            """Execute the requested tool."""
+            
+            if name == "get_current_weather":
+                return await self._get_current_weather(arguments)
+            elif name == "get_forecast":
+                return await self._get_forecast(arguments)
+            elif name == "compare_weather":
+                return await self._compare_weather(arguments)
+            elif name == "save_weather_alert":
+                return await self._save_weather_alert(arguments)
+            else:
+                raise ValueError(f"Unknown tool: {name}")
 
-    async def _execute_tool(self, name: str, arguments: dict):
-        """Execute the requested tool."""
-        if name == "get_current_weather":
-            return await self._get_current_weather(arguments)
-        elif name == "get_forecast":
-            return await self._get_forecast(arguments)
-        elif name == "compare_weather":
-            return await self._compare_weather(arguments)
-        elif name == "save_weather_alert":
-            return await self._save_weather_alert(arguments)
-        else:
-            raise ValueError(f"Unknown tool: {name}")
-
-    async def _get_current_weather(self, args: dict):
+    async def _get_current_weather(self, args: dict) -> list[TextContent]:
         """Get current weather for a city."""
         city = args["city"].lower()
         units = args.get("units", "fahrenheit")
@@ -191,7 +168,7 @@ class WeatherMCPServer:
         """
         return [TextContent(type="text", text=response)]
 
-    async def _get_forecast(self, args: dict):
+    async def _get_forecast(self, args: dict) -> list[TextContent]:
         """Generate a weather forecast."""
         city = args["city"].lower()
         days = min(int(args.get("days", 3)), 7)
@@ -223,7 +200,7 @@ class WeatherMCPServer:
 
         return [TextContent(type="text", text=response)]
 
-    async def _compare_weather(self, args: dict):
+    async def _compare_weather(self, args: dict) -> list[TextContent]:
         """Compare weather between two cities."""
         city1 = args["city1"].lower()
         city2 = args["city2"].lower()
@@ -256,7 +233,7 @@ class WeatherMCPServer:
         """
         return [TextContent(type="text", text=response)]
 
-    async def _save_weather_alert(self, args: dict):
+    async def _save_weather_alert(self, args: dict) -> list[TextContent]:
         """Save a weather alert to file."""
         city = args["city"]
         alert_type = args["alert_type"]
