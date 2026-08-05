@@ -1,13 +1,14 @@
 """
-Tutorial 03: AI Agent with Tools
+Tutorial 03: AI Agent with Tools (OpenRouter Version)
 Demonstrates how to build agents that can use external tools and functions.
+Uses OpenRouter's free API for LLM integration.
 """
 
 import os
 import json
 from datetime import datetime
 from dotenv import load_dotenv
-from openai import OpenAI
+import requests
 
 
 # ============================================================================
@@ -53,7 +54,6 @@ def get_current_time(timezone="UTC"):
     Returns:
         Current time information
     """
-    # Simplified - in production use pytz or zoneinfo
     current_time = datetime.now()
     return {
         "timezone": timezone,
@@ -74,10 +74,9 @@ def get_weather(location, unit="celsius"):
     Returns:
         Weather data dictionary
     """
-    # Mock data - in production, integrate with a real weather API
     mock_temperatures = {
-        "celsius": {"New York": 18, "London": 12, "Tokyo": 22, "Paris": 15},
-        "fahrenheit": {"New York": 64, "London": 54, "Tokyo": 72, "Paris": 59}
+        "celsius": {"New York": 18, "London": 12, "Tokyo": 22, "Paris": 15, "Sydney": 25, "Mumbai": 30},
+        "fahrenheit": {"New York": 64, "London": 54, "Tokyo": 72, "Paris": 59, "Sydney": 77, "Mumbai": 86}
     }
 
     temp_dict = mock_temperatures.get(unit, mock_temperatures["celsius"])
@@ -104,7 +103,6 @@ def search_web(query, num_results=3):
     Returns:
         List of search results
     """
-    # Mock implementation - use DuckDuckGo, Google, or Brave API in production
     return {
         "query": query,
         "num_results": num_results,
@@ -120,7 +118,7 @@ def search_web(query, num_results=3):
 
 
 # ============================================================================
-# Tool Schemas (Function Definitions for OpenAI)
+# Tool Schemas (Function Definitions for OpenRouter)
 # ============================================================================
 
 TOOL_SCHEMAS = [
@@ -238,14 +236,14 @@ class ToolRegistry:
         Args:
             name: Tool name
             function: Callable function
-            schema: OpenAI function schema
+            schema: OpenRouter function schema
         """
         self.tools[name] = {
             'function': function,
             'schema': schema
         }
         self.schemas.append(schema)
-        print(f"Registered tool: {name}")
+        print(f"✅ Registered tool: {name}")
 
     def execute(self, name, **parameters):
         """
@@ -280,32 +278,123 @@ class ToolRegistry:
 
 
 # ============================================================================
-# Tool Agent
+# OpenRouter LLM Client
+# ============================================================================
+
+class OpenRouterClient:
+    """
+    OpenRouter API client for LLM interactions.
+    Handles chat completions with tool support.
+    """
+
+    def __init__(self, model="google/gemma-4-26b-a4b-it:free", temperature=0.7):
+        """
+        Initialize the OpenRouter client.
+
+        Args:
+            model: The model to use (OpenRouter model ID)
+            temperature: Temperature for response generation
+        """
+        load_dotenv()
+
+        self.model = model
+        self.temperature = temperature
+        self.base_url = "https://openrouter.ai/api/v1/chat/completions"
+
+        self.api_key = os.getenv("OPENROUTER_API_KEY")
+        if not self.api_key:
+            raise ValueError(
+                "OPENROUTER_API_KEY not found. Please set it in your .env file.\n"
+                "Get your free key at: https://openrouter.ai/keys"
+            )
+
+        print(f"🤖 OpenRouter Client initialized with model: {model}")
+
+    def chat_completion(self, messages, tools=None, tool_choice="auto"):
+        """
+        Send a chat completion request to OpenRouter.
+
+        Args:
+            messages: List of message dictionaries
+            tools: List of tool schemas (optional)
+            tool_choice: Tool choice strategy
+
+        Returns:
+            Response object with choices
+        """
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8000",  # Required by OpenRouter
+            "X-Title": "Tool Agent"  # Optional but recommended
+        }
+
+        data = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "max_tokens": 1000
+        }
+
+        if tools:
+            data["tools"] = tools
+            data["tool_choice"] = tool_choice
+
+        try:
+            response = requests.post(self.base_url, headers=headers, json=data)
+
+            if response.status_code == 200:
+                result = response.json()
+                return result
+            else:
+                error_data = response.json()
+                error_msg = error_data.get('error', {}).get('message', 'Unknown error')
+                raise Exception(f"API Error ({response.status_code}): {error_msg}")
+
+        except requests.exceptions.ConnectionError:
+            raise Exception("Connection error: Could not reach OpenRouter API.")
+        except requests.exceptions.Timeout:
+            raise Exception("Timeout: The request took too long.")
+
+
+# ============================================================================
+# Tool Agent (OpenRouter Version)
 # ============================================================================
 
 class ToolAgent:
     """
-    An AI agent that can use external tools.
+    An AI agent that can use external tools with OpenRouter.
 
     This agent can understand when to use tools, call them with appropriate
     parameters, and integrate the results into its responses.
     """
 
-    def __init__(self, model="gpt-3.5-turbo", system_prompt=None):
+    def __init__(self, model="google/gemma-4-26b-a4b-it:free", system_prompt=None, temperature=0.7):
         """
         Initialize the tool agent.
 
         Args:
-            model: OpenAI model to use
+            model: OpenRouter model to use
             system_prompt: System prompt for the agent
+            temperature: Temperature for response generation
         """
-        load_dotenv()
-        self.model = model
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        # Initialize OpenRouter client
+        self.llm = OpenRouterClient(model=model, temperature=temperature)
 
         self.system_prompt = system_prompt or """You are a helpful AI assistant with access to tools.
 Use the available tools when they can help answer the user's question more accurately.
-Always explain what tools you're using and why."""
+Always explain what tools you're using and why.
+
+When you need to use a tool, call it with the appropriate parameters.
+After getting the result, explain it to the user in a clear and friendly way.
+
+Important: You have access to these tools:
+- calculator: For mathematical operations
+- get_current_time: To get the current time
+- get_weather: To check weather in a city
+- search_web: To search for information online
+
+If you don't need to use a tool, just respond naturally to the user's question."""
 
         self.conversation_history = []
         self.tool_registry = ToolRegistry()
@@ -313,7 +402,6 @@ Always explain what tools you're using and why."""
 
     def _setup_default_tools(self):
         """Register default tools."""
-        # Map tool schemas to functions
         tool_functions = {
             "calculator": calculator,
             "get_current_time": get_current_time,
@@ -356,20 +444,21 @@ Always explain what tools you're using and why."""
 
         while tool_calls_made < max_tool_calls:
             # Call LLM with tools
-            response = self.client.chat.completions.create(
-                model=self.model,
+            response_data = self.llm.chat_completion(
                 messages=messages,
                 tools=self.tool_registry.get_schemas(),
-                tool_choice="auto",
-                temperature=0.7
+                tool_choice="auto"
             )
 
-            response_message = response.choices[0].message
+            # ✅ FIXED: Extract message from response
+            response_message = response_data['choices'][0]['message']
+            content = response_message.get('content', '')
+            tool_calls = response_message.get('tool_calls', [])
 
-            # Check if LLM wants to use tools
-            if not response_message.tool_calls:
+            # ✅ FIXED: Check if LLM wants to use tools
+            if not tool_calls:
                 # No tool calls - return final response
-                final_response = response_message.content
+                final_response = content or "I don't have a specific answer right now."
                 self.conversation_history.append({
                     "role": "assistant",
                     "content": final_response
@@ -377,69 +466,91 @@ Always explain what tools you're using and why."""
                 return final_response
 
             # LLM wants to use tools
-            print(f"\n[Tool calls requested: {len(response_message.tool_calls)}]")
+            print(f"\n[🔧 Tool calls requested: {len(tool_calls)}]")
 
             # Add assistant message with tool calls to messages
-            messages.append(response_message)
+            messages.append({
+                "role": "assistant",
+                "content": content,
+                "tool_calls": tool_calls
+            })
 
-            # Execute each tool call
-            for tool_call in response_message.tool_calls:
-                tool_name = tool_call.function.name
-                tool_args = json.loads(tool_call.function.arguments)
+            # ✅ FIXED: Execute each tool call
+            for tool_call in tool_calls:
+                function = tool_call.get('function', {})
+                tool_name = function.get('name', '')
+                tool_args = json.loads(function.get('arguments', '{}'))
 
-                print(f"  - Calling {tool_name} with {tool_args}")
+                print(f"  • Calling {tool_name} with {tool_args}")
 
                 # Execute the tool
                 try:
                     result = self.tool_registry.execute(tool_name, **tool_args)
-                    result_str = json.dumps(result)
-                    print(f"    Result: {result_str[:100]}...")
+                    result_str = json.dumps(result, indent=2)
+                    print(f"    ✅ Result: {result_str[:100]}...")
                 except Exception as e:
                     result_str = json.dumps({"error": str(e)})
-                    print(f"    Error: {e}")
+                    print(f"    ❌ Error: {e}")
 
                 # Add tool result to messages
                 messages.append({
                     "role": "tool",
-                    "tool_call_id": tool_call.id,
+                    "tool_call_id": tool_call.get('id', ''),
                     "content": result_str
                 })
 
             tool_calls_made += 1
 
-        # Max iterations reached
-        return "I've reached the maximum number of tool calls. Please try rephrasing your request."
+        # Get final response after all tool calls
+        final_response_data = self.llm.chat_completion(messages=messages)
+        final_content = final_response_data['choices'][0]['message'].get('content', 
+            "I've gathered the information but need to process it.")
+
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": final_content
+        })
+
+        return final_content
 
     def run(self):
         """Run interactive conversation loop."""
         print("\n" + "="*60)
-        print("Tool Agent - Interactive Mode")
+        print("🤖 Tool Agent (OpenRouter) - Interactive Mode")
         print("="*60)
-        print(f"Available tools: {', '.join(self.tool_registry.get_tool_names())}")
+        print(f"📚 Available tools: {', '.join(self.tool_registry.get_tool_names())}")
+        print(f"🧠 Model: {self.llm.model}")
         print("\nCommands:")
         print("  - 'quit': Exit")
         print("  - 'tools': List available tools")
+        print("  - 'clear': Clear conversation history")
         print("="*60 + "\n")
 
         while True:
             user_input = input("You: ").strip()
 
             if user_input.lower() in ['quit', 'exit', 'bye']:
-                print("\nAgent: Goodbye!\n")
+                print("\n🤖 Agent: Goodbye! Have a great day! 👋\n")
                 break
 
             if user_input.lower() == 'tools':
-                print(f"\nAvailable tools: {', '.join(self.tool_registry.get_tool_names())}\n")
+                print(f"\n📚 Available tools: {', '.join(self.tool_registry.get_tool_names())}\n")
+                continue
+
+            if user_input.lower() == 'clear':
+                self.conversation_history = []
+                print("🧹 Conversation history cleared!\n")
                 continue
 
             if not user_input:
                 continue
 
             try:
+                print("\n🤖 Agent: ", end="", flush=True)
                 response = self.generate_response(user_input)
-                print(f"\nAgent: {response}\n")
+                print(f"{response}\n")
             except Exception as e:
-                print(f"\nError: {e}\n")
+                print(f"\n❌ Error: {e}\n")
 
 
 # ============================================================================
@@ -448,7 +559,10 @@ Always explain what tools you're using and why."""
 
 def demo_calculator():
     """Demonstrate calculator tool usage."""
-    print("\n=== Demo: Calculator Tool ===\n")
+    print("\n" + "="*60)
+    print("📊 Demo: Calculator Tool")
+    print("="*60 + "\n")
+
     agent = ToolAgent()
 
     questions = [
@@ -458,28 +572,69 @@ def demo_calculator():
     ]
 
     for question in questions:
-        print(f"Q: {question}")
+        print(f"👤 You: {question}")
         response = agent.generate_response(question)
-        print(f"A: {response}\n")
+        print(f"🤖 Agent: {response}\n")
+        print("-"*50)
 
 
 def demo_multiple_tools():
     """Demonstrate using multiple tools in one query."""
-    print("\n=== Demo: Multiple Tools ===\n")
+    print("\n" + "="*60)
+    print("🔧 Demo: Multiple Tools")
+    print("="*60 + "\n")
+
     agent = ToolAgent()
 
-    # Question that requires multiple tools
     question = "What's the weather in Tokyo and what time is it there?"
-    print(f"Q: {question}")
+    print(f"👤 You: {question}")
     response = agent.generate_response(question)
-    print(f"A: {response}\n")
+    print(f"🤖 Agent: {response}\n")
 
+
+def demo_search_and_calculate():
+    """Demonstrate search and calculator combined."""
+    print("\n" + "="*60)
+    print("🔍 Demo: Search + Calculate")
+    print("="*60 + "\n")
+
+    agent = ToolAgent()
+
+    question = "Search for the population of Japan and calculate what 10% of that would be"
+    print(f"👤 You: {question}")
+    response = agent.generate_response(question)
+    print(f"🤖 Agent: {response}\n")
+
+
+# ============================================================================
+# Main
+# ============================================================================
 
 if __name__ == "__main__":
-    # Run interactive agent
-    agent = ToolAgent()
-    agent.run()
+    print("\n" + "="*70)
+    print("🤖 TOOL AGENT (OpenRouter Version)")
+    print("="*70)
+    print("\nChoose a mode:")
+    print("  1. Interactive Mode (Chat with the agent)")
+    print("  2. Demo: Calculator Tool")
+    print("  3. Demo: Multiple Tools")
+    print("  4. Demo: Search + Calculate")
+    print("  q. Quit")
 
-    # Uncomment to run demos:
-    # demo_calculator()
-    # demo_multiple_tools()
+    choice = input("\nYour choice: ").strip()
+
+    if choice == "1":
+        agent = ToolAgent()
+        agent.run()
+    elif choice == "2":
+        demo_calculator()
+    elif choice == "3":
+        demo_multiple_tools()
+    elif choice == "4":
+        demo_search_and_calculate()
+    elif choice.lower() == 'q':
+        print("\nGoodbye! 👋\n")
+    else:
+        print("Invalid choice. Running interactive mode...")
+        agent = ToolAgent()
+        agent.run()
