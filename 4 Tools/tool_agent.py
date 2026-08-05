@@ -7,9 +7,26 @@ Uses OpenRouter's free API for LLM integration.
 import os
 import json
 from datetime import datetime
+from pathlib import Path
 from dotenv import load_dotenv
 import requests
 
+
+# ============================================================================
+# Load .env from parent directory (project root)
+# ============================================================================
+# Get the parent directory of this script (project root)
+script_dir = Path(__file__).parent
+project_root = script_dir.parent  # Go up one level
+env_path = project_root / '.env'
+
+# Load the .env file from the parent directory
+if env_path.exists():
+    load_dotenv(env_path)
+    print(f"✅ Loaded .env from: {env_path}")
+else:
+    print(f"⚠️ .env file not found at: {env_path}")
+    print("📝 Make sure your .env file is in the project root folder")
 
 # ============================================================================
 # Tool Functions
@@ -63,33 +80,150 @@ def get_current_time(timezone="UTC"):
     }
 
 
-def get_weather(location, unit="celsius"):
-    """
-    Get weather information for a location (mock implementation).
+# ============================================================================
+# Real Weather Tool
+# ============================================================================
 
+def get_real_weather(location, unit="celsius"):
+    """
+    Get REAL weather information from WeatherAPI.com.
+    
+    Args:
+        location: City name (e.g., 'New York', 'London')
+        unit: Temperature unit ('celsius' or 'fahrenheit')
+    
+    Returns:
+        Weather data dictionary with real values
+    """
+    # Get API key from environment
+    api_key = os.getenv("WEATHER_API_KEY")
+    
+    # Check if API key exists
+    if not api_key:
+        return {
+            "error": "WEATHER_API_KEY not found in .env file. Please add your WeatherAPI.com key."
+        }
+    
+    # Build the API URL
+    # WeatherAPI.com endpoint for current weather
+    base_url = "https://api.weatherapi.com/v1/current.json"
+    params = {
+        "key": api_key,
+        "q": location,  # City name
+        "aqi": "no"     # Air quality (optional)
+    }
+    
+    try:
+        # Make the API call
+        response = requests.get(base_url, params=params, timeout=10)
+        
+        # Check if request was successful
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Extract weather data
+            return {
+                "location": {
+                    "name": data['location']['name'],
+                    "region": data['location']['region'],
+                    "country": data['location']['country']
+                },
+                "temperature": data['current']['temp_c'] if unit == "celsius" else data['current']['temp_f'],
+                "unit": unit,
+                "condition": data['current']['condition']['text'],
+                "icon": data['current']['condition']['icon'],
+                "humidity": data['current']['humidity'],
+                "wind_speed": data['current']['wind_kph'],
+                "feels_like": data['current']['feelslike_c'] if unit == "celsius" else data['current']['feelslike_f'],
+                "last_updated": data['current']['last_updated']
+            }
+        
+        elif response.status_code == 400:
+            # City not found
+            return {
+                "error": f"City '{location}' not found. Please check the spelling."
+            }
+        else:
+            # Other API errors
+            return {
+                "error": f"Weather API error: {response.status_code} - {response.text}"
+            }
+    
+    except requests.exceptions.ConnectionError:
+        return {"error": "Connection error: Could not reach Weather API. Check your internet."}
+    except requests.exceptions.Timeout:
+        return {"error": "Timeout: The weather request took too long."}
+    except Exception as e:
+        return {"error": f"Unexpected error: {str(e)}"}
+
+
+# ============================================================================
+# Enhanced Weather Tool with Forecast
+# ============================================================================
+
+def get_weather_forecast(location, days=3, unit="celsius"):
+    """
+    Get REAL weather forecast from WeatherAPI.com.
+    
     Args:
         location: City name
+        days: Number of days to forecast (1-7)
         unit: Temperature unit ('celsius' or 'fahrenheit')
-
+    
     Returns:
-        Weather data dictionary
+        Forecast data dictionary
     """
-    mock_temperatures = {
-        "celsius": {"New York": 18, "London": 12, "Tokyo": 22, "Paris": 15, "Sydney": 25, "Mumbai": 30},
-        "fahrenheit": {"New York": 64, "London": 54, "Tokyo": 72, "Paris": 59, "Sydney": 77, "Mumbai": 86}
+    api_key = os.getenv("WEATHER_API_KEY")
+    
+    if not api_key:
+        return {"error": "WEATHER_API_KEY not found in .env file."}
+    
+    base_url = "https://api.weatherapi.com/v1/forecast.json"
+    params = {
+        "key": api_key,
+        "q": location,
+        "days": days,
+        "aqi": "no"
     }
+    
+    try:
+        response = requests.get(base_url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            forecast_days = []
+            for day in data['forecast']['forecastday']:
+                if unit == "celsius":
+                    max_temp = day['day']['maxtemp_c']
+                    min_temp = day['day']['mintemp_c']
+                else:
+                    max_temp = day['day']['maxtemp_f']
+                    min_temp = day['day']['mintemp_f']
+                
+                forecast_days.append({
+                    "date": day['date'],
+                    "max_temperature": max_temp,
+                    "min_temperature": min_temp,
+                    "condition": day['day']['condition']['text'],
+                    "chance_of_rain": day['day']['daily_chance_of_rain'],
+                    "chance_of_snow": day['day']['daily_chance_of_snow']
+                })
+            
+            return {
+                "location": f"{data['location']['name']}, {data['location']['country']}",
+                "unit": unit,
+                "forecast": forecast_days
+            }
+        
+        elif response.status_code == 400:
+            return {"error": f"City '{location}' not found."}
+        else:
+            return {"error": f"Weather API error: {response.status_code}"}
+    
+    except Exception as e:
+        return {"error": f"Error: {str(e)}"}
 
-    temp_dict = mock_temperatures.get(unit, mock_temperatures["celsius"])
-    temperature = temp_dict.get(location, 20 if unit == "celsius" else 68)
-
-    return {
-        "location": location,
-        "temperature": temperature,
-        "unit": unit,
-        "condition": "Partly cloudy",
-        "humidity": 65,
-        "wind_speed": 10
-    }
 
 
 def search_web(query, num_results=3):
@@ -165,17 +299,18 @@ TOOL_SCHEMAS = [
             }
         }
     },
-    {
+
+     {
         "type": "function",
         "function": {
-            "name": "get_weather",
-            "description": "Get current weather information for a specific location",
+            "name": "get_real_weather",
+            "description": "Get REAL current weather for any city using WeatherAPI.com. Use this instead of the mock version.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "location": {
                         "type": "string",
-                        "description": "City name (e.g., 'New York', 'London', 'Tokyo')"
+                        "description": "City name (e.g., 'New York', 'London, UK', 'Tokyo')"
                     },
                     "unit": {
                         "type": "string",
@@ -188,6 +323,36 @@ TOOL_SCHEMAS = [
             }
         }
     },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather_forecast",
+            "description": "Get REAL weather forecast for a city for the next few days",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "City name"
+                    },
+                    "days": {
+                        "type": "integer",
+                        "description": "Number of forecast days (1-7)",
+                        "default": 3
+                    },
+                    "unit": {
+                        "type": "string",
+                        "enum": ["celsius", "fahrenheit"],
+                        "description": "Temperature unit",
+                        "default": "celsius"
+                    }
+                },
+                "required": ["location"]
+            }
+        }
+    },
+  
     {
         "type": "function",
         "function": {
@@ -405,7 +570,8 @@ If you don't need to use a tool, just respond naturally to the user's question."
         tool_functions = {
             "calculator": calculator,
             "get_current_time": get_current_time,
-            "get_weather": get_weather,
+            "get_real_weather": get_real_weather,        # ← NEW: Real weather
+            "get_weather_forecast": get_weather_forecast, # ← NEW: Forecast
             "search_web": search_web
         }
 
@@ -605,6 +771,51 @@ def demo_search_and_calculate():
     response = agent.generate_response(question)
     print(f"🤖 Agent: {response}\n")
 
+# ============================================================================
+# Demo Function to Test Real Weather
+# ============================================================================
+
+def demo_real_weather():
+    """Demonstrate real weather tool usage."""
+    print("\n" + "="*60)
+    print("🌤️ Demo: Real Weather Tool")
+    print("="*60 + "\n")
+    
+    # Test current weather
+    print("Testing current weather:")
+    print("-" * 40)
+    
+    weather = get_real_weather("New York")
+    if "error" in weather:
+        print(f"❌ {weather['error']}")
+    else:
+        print(f"🌆 {weather['location']['name']}, {weather['location']['country']}")
+        print(f"🌡️ Temperature: {weather['temperature']}°{'C' if weather['unit'] == 'celsius' else 'F'}")
+        print(f"☁️ Condition: {weather['condition']}")
+        print(f"💧 Humidity: {weather['humidity']}%")
+        print(f"💨 Wind: {weather['wind_speed']} km/h")
+        print(f"🤔 Feels like: {weather['feels_like']}°{'C' if weather['unit'] == 'celsius' else 'F'}")
+        print(f"🕐 Last updated: {weather['last_updated']}")
+    
+    print("\n" + "-" * 40)
+    
+    # Test forecast
+    print("Testing forecast:")
+    print("-" * 40)
+    
+    forecast = get_weather_forecast("London", days=3)
+    if "error" in forecast:
+        print(f"❌ {forecast['error']}")
+    else:
+        print(f"📅 Forecast for {forecast['location']}")
+        for day in forecast['forecast']:
+            print(f"\n📆 {day['date']}")
+            print(f"   High: {day['max_temperature']}°{'C' if forecast['unit'] == 'celsius' else 'F'}")
+            print(f"   Low: {day['min_temperature']}°{'C' if forecast['unit'] == 'celsius' else 'F'}")
+            print(f"   Condition: {day['condition']}")
+            print(f"   ☔ Chance of rain: {day['chance_of_rain']}%")
+
+
 
 # ============================================================================
 # Main
@@ -619,6 +830,7 @@ if __name__ == "__main__":
     print("  2. Demo: Calculator Tool")
     print("  3. Demo: Multiple Tools")
     print("  4. Demo: Search + Calculate")
+    print("  5. Demo: Wether")
     print("  q. Quit")
 
     choice = input("\nYour choice: ").strip()
@@ -632,6 +844,8 @@ if __name__ == "__main__":
         demo_multiple_tools()
     elif choice == "4":
         demo_search_and_calculate()
+    elif choice == "5":
+        demo_real_weather()
     elif choice.lower() == 'q':
         print("\nGoodbye! 👋\n")
     else:
