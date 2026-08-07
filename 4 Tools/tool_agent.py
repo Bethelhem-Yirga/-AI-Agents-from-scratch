@@ -382,6 +382,150 @@ TOOL_SCHEMAS = [
 # Tool Registry
 # ============================================================================
 
+
+
+# ============================================================================
+# 🧠 MEMORY CLASS - NEW!
+# ============================================================================
+
+class ConversationMemory:
+    """
+    Manages conversation history with short-term and long-term memory.
+    - Short-term: Recent messages within current session
+    - Long-term: Important facts stored across sessions
+    """
+    
+    def __init__(self, max_short_term=20, memory_file="conversation_memory.json"):
+        """
+        Initialize the memory system.
+        
+        Args:
+            max_short_term: Maximum messages to keep in short-term memory
+            memory_file: File to store long-term memories
+        """
+        self.max_short_term = max_short_term
+        self.memory_file = memory_file
+        
+        # Short-term memory (current session)
+        self.short_term = []
+        
+        # Long-term memory (persistent)
+        self.long_term = []
+        self._load_long_term()
+        
+        print(f"🧠 Memory initialized: Short-term ({max_short_term} messages), Long-term (persistent)")
+    
+    def add_message(self, role, content, important=False):
+        """
+        Add a message to short-term memory.
+        
+        Args:
+            role: 'user' or 'assistant'
+            content: The message content
+            important: If True, also save to long-term memory
+        """
+        message = {
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Add to short-term
+        self.short_term.append(message)
+        
+        # Keep only recent messages
+        if len(self.short_term) > self.max_short_term:
+            self.short_term = self.short_term[-self.max_short_term:]
+        
+        # Save important messages to long-term
+        if important:
+            self._save_to_long_term(role, content)
+    
+    def _save_to_long_term(self, role, content):
+        """Save important messages to long-term memory."""
+        memory = {
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now().isoformat()
+        }
+        self.long_term.append(memory)
+        self._save_long_term()
+    
+    def _load_long_term(self):
+        """Load long-term memory from file."""
+        try:
+            with open(self.memory_file, 'r') as f:
+                self.long_term = json.load(f)
+                print(f"💾 Loaded {len(self.long_term)} long-term memories")
+        except FileNotFoundError:
+            self.long_term = []
+            print("💾 No existing memory file, starting fresh")
+    
+    def _save_long_term(self):
+        """Save long-term memory to file."""
+        with open(self.memory_file, 'w') as f:
+            json.dump(self.long_term, f, indent=2)
+    
+    def get_context(self, max_messages=10):
+        """
+        Get recent context for the current conversation.
+        Combines short-term and recent long-term memories.
+        """
+        # Start with recent short-term messages
+        context = list(self.short_term[-max_messages:])
+        
+        # Add recent long-term memories as context
+        if self.long_term:
+            # Get last 3 long-term memories
+            recent_long = self.long_term[-3:]
+            context.insert(0, {
+                "role": "system",
+                "content": f"📌 REMEMBERED FACTS:\n" + chr(10).join([f"• {m['content']}" for m in recent_long])
+            })
+        
+        return context
+    
+    def get_long_term(self):
+        """Get all long-term memories."""
+        return self.long_term
+    
+    def clear_short_term(self):
+        """Clear short-term memory."""
+        self.short_term = []
+        print("🧹 Short-term memory cleared")
+    
+    def clear_long_term(self):
+        """Clear all long-term memories."""
+        self.long_term = []
+        self._save_long_term()
+        print("🧹 Long-term memory cleared")
+    
+    def show_memory(self):
+        """Display all memories."""
+        print("\n" + "="*60)
+        print("🧠 MEMORY STATUS")
+        print("="*60)
+        
+        print(f"\n📋 Short-term Memory ({len(self.short_term)} messages):")
+        if self.short_term:
+            for msg in self.short_term[-5:]:
+                role = msg['role'].upper()
+                content = msg['content'][:50] + "..." if len(msg['content']) > 50 else msg['content']
+                print(f"  • {role}: {content}")
+        else:
+            print("  (No short-term messages)")
+        
+        print(f"\n💾 Long-term Memory ({len(self.long_term)} memories):")
+        if self.long_term:
+            for mem in self.long_term[-5:]:
+                print(f"  • {mem['content'][:80]}...")
+        else:
+            print("  (No long-term memories)")
+        
+        print("="*60 + "\n")
+
+
+
 class ToolRegistry:
     """
     Manages available tools for the agent.
@@ -452,7 +596,7 @@ class OpenRouterClient:
     Handles chat completions with tool support.
     """
 
-    def __init__(self, model="google/gemma-4-26b-a4b-it:free", temperature=0.7):
+    def __init__(self, model="nvidia/nemotron-3-ultra-550b-a55b:free", temperature=0.7):
         """
         Initialize the OpenRouter client.
 
@@ -534,7 +678,7 @@ class ToolAgent:
     parameters, and integrate the results into its responses.
     """
 
-    def __init__(self, model="google/gemma-4-26b-a4b-it:free", system_prompt=None, temperature=0.7):
+    def __init__(self, model="nvidia/nemotron-3-ultra-550b-a55b:free", system_prompt=None, temperature=0.7):
         """
         Initialize the tool agent.
 
@@ -545,6 +689,8 @@ class ToolAgent:
         """
         # Initialize OpenRouter client
         self.llm = OpenRouterClient(model=model, temperature=temperature)
+
+        self.memory = ConversationMemory(max_short_term=20)
 
         self.system_prompt = system_prompt or """You are a helpful AI assistant with access to tools.
 Use the available tools when they can help answer the user's question more accurately.
@@ -561,7 +707,7 @@ Important: You have access to these tools:
 
 If you don't need to use a tool, just respond naturally to the user's question."""
 
-        self.conversation_history = []
+        
         self.tool_registry = ToolRegistry()
         self._setup_default_tools()
 
@@ -586,70 +732,64 @@ If you don't need to use a tool, just respond naturally to the user's question."
 
     def generate_response(self, user_message, max_tool_calls=5):
         """
-        Generate a response with tool support.
-
-        Args:
-            user_message: User's input message
-            max_tool_calls: Maximum number of tool iterations
-
-        Returns:
-            Agent's response string
+        Generate a response with tool support AND MEMORY! 🧠
         """
-        # Add user message to history
-        self.conversation_history.append({
-            "role": "user",
-            "content": user_message
-        })
-
-        # Build messages for LLM
+        # 🧠 Check for important information to remember
+        important_keywords = ["my name is", "i am", "i'm", "call me", "remember that", 
+                              "important", "favorite", "prefer", "like", "dislike"]
+        
+        is_important = any(keyword in user_message.lower() for keyword in important_keywords)
+        
+        # Add user message to memory (with importance flag)
+        self.memory.add_message("user", user_message, important=is_important)
+        
+        # Build messages with memory context
         messages = [
             {"role": "system", "content": self.system_prompt}
-        ] + self.conversation_history
-
+        ]
+        
+        # 🧠 Add memory context
+        memory_context = self.memory.get_context(max_messages=10)
+        for msg in memory_context:
+            messages.append(msg)
+        
+        # Add current user message
+        messages.append({"role": "user", "content": user_message})
+        
         tool_calls_made = 0
-
+        
         while tool_calls_made < max_tool_calls:
-            # Call LLM with tools
             response_data = self.llm.chat_completion(
                 messages=messages,
                 tools=self.tool_registry.get_schemas(),
                 tool_choice="auto"
             )
-
-            # ✅ FIXED: Extract message from response
+            
             response_message = response_data['choices'][0]['message']
             content = response_message.get('content', '')
             tool_calls = response_message.get('tool_calls', [])
-
-            # ✅ FIXED: Check if LLM wants to use tools
+            
             if not tool_calls:
-                # No tool calls - return final response
+                # No tool calls - save response to memory and return
                 final_response = content or "I don't have a specific answer right now."
-                self.conversation_history.append({
-                    "role": "assistant",
-                    "content": final_response
-                })
+                self.memory.add_message("assistant", final_response)
                 return final_response
-
-            # LLM wants to use tools
+            
             print(f"\n[🔧 Tool calls requested: {len(tool_calls)}]")
-
-            # Add assistant message with tool calls to messages
+            
             messages.append({
                 "role": "assistant",
                 "content": content,
                 "tool_calls": tool_calls
             })
-
-            # ✅ FIXED: Execute each tool call
+            
             for tool_call in tool_calls:
                 function = tool_call.get('function', {})
                 tool_name = function.get('name', '')
                 tool_args = json.loads(function.get('arguments', '{}'))
-
+                
                 print(f"  • Calling {tool_name} with {tool_args}")
-
-                # Execute the tool
+                
                 try:
                     result = self.tool_registry.execute(tool_name, **tool_args)
                     result_str = json.dumps(result, indent=2)
@@ -657,28 +797,23 @@ If you don't need to use a tool, just respond naturally to the user's question."
                 except Exception as e:
                     result_str = json.dumps({"error": str(e)})
                     print(f"    ❌ Error: {e}")
-
-                # Add tool result to messages
+                
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.get('id', ''),
                     "content": result_str
                 })
-
+            
             tool_calls_made += 1
-
-        # Get final response after all tool calls
+        
+        # Get final response
         final_response_data = self.llm.chat_completion(messages=messages)
         final_content = final_response_data['choices'][0]['message'].get('content', 
             "I've gathered the information but need to process it.")
-
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": final_content
-        })
-
+        
+        self.memory.add_message("assistant", final_content)
         return final_content
-
+    
     def run(self):
         """Run interactive conversation loop."""
         print("\n" + "="*60)
@@ -690,6 +825,8 @@ If you don't need to use a tool, just respond naturally to the user's question."
         print("  - 'quit': Exit")
         print("  - 'tools': List available tools")
         print("  - 'clear': Clear conversation history")
+        print("  - 'memory': Show what I remember")
+        print("  - 'forget': Clear all memories")
         print("="*60 + "\n")
 
         while True:
@@ -706,6 +843,14 @@ If you don't need to use a tool, just respond naturally to the user's question."
             if user_input.lower() == 'clear':
                 self.conversation_history = []
                 print("🧹 Conversation history cleared!\n")
+                continue
+
+            if user_input.lower() == 'memory':
+                self.memory.show_memory()
+                continue
+            
+            if user_input.lower() == 'forget':
+                self.memory.clear_long_term()
                 continue
 
             if not user_input:
