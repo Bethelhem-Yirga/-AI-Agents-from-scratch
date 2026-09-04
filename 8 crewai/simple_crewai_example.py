@@ -1,7 +1,7 @@
 """
 Simple CrewAI Introduction: Getting Started with Multi-Agent Systems
 
-This example uses OpenRouter instead of OpenAI.
+This example uses OpenRouter with Google Gemma model.
 """
 
 from __future__ import annotations
@@ -25,35 +25,42 @@ if env_path.exists():
 else:
     print("⚠️ .env file not found!")
 
-# ============================================================================
-# ✅ FIX: Configure CrewAI to use OpenRouter
-# ============================================================================
+# Get API key
+api_key = os.getenv("OPENROUTER_API_KEY", "")
 
-# CrewAI looks for these environment variables
-os.environ["OPENAI_API_KEY"] = os.getenv("OPENROUTER_API_KEY", "")
-os.environ["OPENAI_BASE_URL"] = "https://openrouter.ai/api/v1"
-
-# Set the model to use
-os.environ["OPENAI_MODEL_NAME"] = "google/gemini-2.0-flash-exp:free"
-
-# Verify configuration
-if not os.environ["OPENAI_API_KEY"]:
+if not api_key:
     print("❌ ERROR: OPENROUTER_API_KEY not found in .env")
     print("Please add: OPENROUTER_API_KEY=your-key-here")
     sys.exit(1)
 
-print(f"✅ Using OpenRouter with model: {os.environ['OPENAI_MODEL_NAME']}")
-print(f"✅ API Key found: {os.environ['OPENAI_API_KEY'][:10]}...")
+print(f"✅ API Key found: {api_key[:10]}...")
 
 # ============================================================================
-# Import CrewAI (after environment setup)
+# Import CrewAI
 # ============================================================================
 
 from crewai import Agent, Task, Crew, Process
-
+from crewai.llm import LLM
 
 # ============================================================================
-# Step 1: Create Agents
+# ✅ CREATE LLM WITH OPENROUTER
+# ============================================================================
+
+# Use OpenRouter with Gemma model
+# Replace the LLM section with:
+
+llm = LLM(
+    model="openai/gpt-4o-mini",  # ✅ Works on OpenRouter
+    base_url="https://openrouter.ai/api/v1",
+    api_key=api_key,
+    temperature=0.7,
+    max_tokens=1000,
+)
+
+print(f"✅ Using OpenRouter with model: google/gemma-4-26b-a4b-it:free")
+
+# ============================================================================
+# Step 1: Create Agents with explicit LLM
 # ============================================================================
 
 market_researcher = Agent(
@@ -62,6 +69,7 @@ market_researcher = Agent(
     backstory="""You are an experienced market researcher who excels at
     understanding consumer behavior, market trends, and competitive landscapes.
     You provide data-driven insights that inform business decisions.""",
+    llm=llm,  # ✅ Explicitly use OpenRouter LLM
     verbose=True,
     allow_delegation=False,
 )
@@ -72,6 +80,7 @@ marketing_strategist = Agent(
     backstory="""You are a creative marketing strategist with a proven track
     record of successful product launches. You excel at crafting compelling
     marketing messages and choosing the right channels to reach target audiences.""",
+    llm=llm,  # ✅ Explicitly use OpenRouter LLM
     verbose=True,
     allow_delegation=False,
 )
@@ -139,6 +148,7 @@ def main():
     print("  1. Creating agents with specific roles")
     print("  2. Defining tasks for each agent")
     print("  3. Running a crew in sequential process")
+    print("\n🧠 Model:google/gemma-4-26b-a4b-it:free (via OpenRouter)")
     print("\n" + "="*80 + "\n")
 
     print("🧠 Starting the product launch crew...\n")
@@ -162,6 +172,7 @@ def main():
         print("  1. Check your .env file has: OPENROUTER_API_KEY=your-key")
         print("  2. Verify the API key is valid")
         print("  3. Check your internet connection")
+        print("  4. Try a different model if this one is rate-limited")
 
 
 if __name__ == "__main__":
