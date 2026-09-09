@@ -1,9 +1,8 @@
 """
-Tutorial 09 (bonus): Multi-agent coordination with vanilla LangChain.
+Tutorial 09 (bonus): Multi-agent coordination with vanilla LangChain (Fixed).
 
-This script orchestrates three LangChain ReAct agents—Researcher, Coder, and Reviewer—
-without LangGraph. Each agent is created with `create_react_agent`, and we pass
-context manually between them to complete a structured analytics task.
+This script orchestrates three LangChain agents—Researcher, Coder, and Reviewer—
+using the new LangChain 1.0+ syntax.
 """
 
 from __future__ import annotations
@@ -12,11 +11,58 @@ import ast
 import operator
 import os
 from typing import Any, Iterable
+from pathlib import Path
 
 from dotenv import load_dotenv
-from langchain.agents import AgentExecutor, Tool, create_react_agent
+
+# ============================================================================
+# ✅ Fixed imports for LangChain 1.0+
+# ============================================================================
+
+import langchain.agents
+from langchain.tools import Tool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
+
+# ============================================================================
+# Load .env from project root
+# ============================================================================
+
+script_dir = Path(__file__).parent
+project_root = script_dir.parent
+env_path = project_root / '.env'
+
+if env_path.exists():
+    load_dotenv(env_path)
+    print(f"✅ Loaded .env from: {env_path}")
+else:
+    print("⚠️ .env file not found!")
+
+# ============================================================================
+# ✅ Configure OpenRouter
+# ============================================================================
+
+api_key = os.getenv("OPENROUTER_API_KEY", "")
+
+if not api_key:
+    print("❌ ERROR: OPENROUTER_API_KEY not found in .env")
+    print("Please add: OPENROUTER_API_KEY=your-key-here")
+    raise RuntimeError("OPENROUTER_API_KEY is required.")
+
+print(f"✅ API Key found: {api_key[:10]}...")
+
+# Set environment variables for LangChain
+os.environ["OPENAI_API_KEY"] = api_key
+os.environ["OPENAI_BASE_URL"] = "https://openrouter.ai/api/v1"
+
+# ✅ Use a model that works with OpenRouter
+OPENROUTER_MODEL = "openai/gpt-4o-mini"
+
+print(f"✅ Using OpenRouter with model: {OPENROUTER_MODEL}")
+
+# ============================================================================
+# Safe Calculator
+# ============================================================================
 
 ALLOWED_OPERATORS = {
     ast.Add: operator.add,
@@ -62,17 +108,17 @@ def build_tools() -> list[Tool]:
     ]
 
 
-def create_agent(system_prompt: str, llm: ChatOpenAI, tools: list[Tool]) -> AgentExecutor:
-    """Create a ReAct agent with a custom system prompt."""
+def create_agent(system_prompt: str, llm: ChatOpenAI, tools: list[Tool]) -> langchain.agents.AgentExecutor:
+    """Create a tool-calling agent with a custom system prompt."""
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", system_prompt),
             ("human", "{input}"),
-            MessagesPlaceholder("agent_scratchpad"),
+            MessagesPlaceholder(variable_name="agent_scratchpad"),
         ]
     )
-    agent = create_react_agent(llm, tools, prompt)
-    return AgentExecutor(
+    agent = langchain.agents.create_tool_calling_agent(llm, tools, prompt)
+    return langchain.agents.AgentExecutor(
         agent=agent,
         tools=tools,
         verbose=True,
@@ -89,9 +135,16 @@ def format_steps(result: dict[str, Any]) -> Iterable[str]:
 
 def run_pipeline(question: str) -> None:
     """Coordinate the three agents on the provided question."""
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.25)
+    # ✅ Create LLM with OpenRouter
+    llm = ChatOpenAI(
+        model=OPENROUTER_MODEL,
+        temperature=0.25,
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+    )
     tools = build_tools()
 
+    # Create three specialized agents
     researcher = create_agent(
         "You are ResearchAgent. Read the business question, outline 3-4 bullet steps, "
         "and highlight which columns/statistics from time_series.csv you need.",
@@ -115,6 +168,10 @@ def run_pipeline(question: str) -> None:
     context: dict[str, Any] = {}
 
     # Step 1: Researcher plan
+    print("\n" + "="*80)
+    print("🔍 RESEARCHER AGENT - Planning Analysis")
+    print("="*80)
+    
     research_result = researcher.invoke(
         {
             "input": (
@@ -126,6 +183,10 @@ def run_pipeline(question: str) -> None:
     context["plan"] = research_result["output"]
 
     # Step 2: Coder produces pseudocode leveraging plan
+    print("\n" + "="*80)
+    print("💻 CODER AGENT - Writing Analysis Code")
+    print("="*80)
+    
     coder_result = coder.invoke(
         {
             "input": (
@@ -138,6 +199,10 @@ def run_pipeline(question: str) -> None:
     context["code"] = coder_result["output"]
 
     # Step 3: Reviewer checks the work
+    print("\n" + "="*80)
+    print("📋 REVIEWER AGENT - Quality Check")
+    print("="*80)
+    
     reviewer_result = reviewer.invoke(
         {
             "input": (
@@ -150,31 +215,49 @@ def run_pipeline(question: str) -> None:
     )
     context["review"] = reviewer_result["output"]
 
-    print("\n=== Research Agent Output ===")
+    # Final summary
+    print("\n" + "="*80)
+    print("📋 FINAL SUMMARY")
+    print("="*80)
+    
+    print("\n" + "="*80)
+    print("🔍 RESEARCH AGENT OUTPUT")
+    print("="*80)
     print(context["plan"])
+    print("\n--- Tool Calls ---")
     for step in format_steps(research_result):
         print(step)
 
-    print("\n=== Coder Agent Output ===")
+    print("\n" + "="*80)
+    print("💻 CODER AGENT OUTPUT")
+    print("="*80)
     print(context["code"])
+    print("\n--- Tool Calls ---")
     for step in format_steps(coder_result):
         print(step)
 
-    print("\n=== Reviewer Agent Output ===")
+    print("\n" + "="*80)
+    print("📋 REVIEWER AGENT OUTPUT")
+    print("="*80)
     print(context["review"])
+    print("\n--- Tool Calls ---")
     for step in format_steps(reviewer_result):
         print(step)
 
 
 def main() -> None:
-    load_dotenv(override=True)
-    if not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError("OPENAI_API_KEY is required.")
-
     task = (
         "Find seasonality, anomalies, and 2 recommendations using the dataset time_series.csv. "
         "Return a punchy summary at the end."
     )
+    
+    print("\n" + "="*80)
+    print("🧠 Multi-Agent Pipeline (LangChain Tool-Calling)")
+    print("="*80)
+    print(f"📋 Task: {task}")
+    print(f"🧠 Model: {OPENROUTER_MODEL}")
+    print("="*80)
+    
     run_pipeline(task)
 
 
